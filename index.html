@@ -151,13 +151,7 @@
       document.getElementById('avgOutdoor').textContent = stats.outdoor.avg;
       document.getElementById('minIndoor').textContent = stats.indoor.min;
       document.getElementById('minOutdoor').textContent = stats.outdoor.min;
-      document.getElementById('maxIndoor').textContent = stats.indoor.max;
-      document.getElementById('maxOutdoor').textContent = stats.outdoor.max;
-
-      const last = rawData[rawData.length - 1];
-      document.getElementById('curIndoor').textContent = last.indoor_temp_C + '°C';
-      document.getElementById('curOutdoor').textContent = last.outdoor_temp_C + '°C';
-      document.getElementById('lastTs').textContent = isoToLocal(last.timestamp);
+      document.getElementById('maxIndoor').textContent = stats.outdoor.max;
 
       document.getElementById('rangeIndoor').textContent = stats.indoor.min + ' / ' + stats.indoor.max;
       document.getElementById('rangeOutdoor').textContent = stats.outdoor.min + ' / ' + stats.outdoor.max;
@@ -195,8 +189,26 @@
           scales: { x: { ticks: { color: '#9fb3c9' } }, y: { ticks: { color: '#9fb3c9' } } }
         }
       });
+
+      // Fetch latest data for current values and timestamp
+      try {
+        const latestResponse = await fetch('/api/t/latest');
+        const latestData = await latestResponse.json();
+        if (latestResponse.ok) {
+          document.getElementById('curIndoor').textContent = latestData.indoor_temp_C.toFixed(2) + '°C';
+          document.getElementById('curOutdoor').textContent = latestData.outdoor_temp_C.toFixed(2) + '°C';
+          document.getElementById('lastTs').textContent = isoToLocal(latestData.timestamp);
+        } else {
+          throw new Error(`HTTP error! status: ${latestResponse.status}`);
+        }
+      } catch (e) {
+        console.error('Failed to fetch latest data:', e);
+        document.getElementById('curIndoor').textContent = '--°C';
+        document.getElementById('curOutdoor').textContent = '--°C';
+        document.getElementById('lastTs').textContent = 'Error';
+      }
     }
-    
+
     init();
   </script>
 </body>
