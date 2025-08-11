@@ -13,7 +13,7 @@
     h1{font-size:20px;margin:0}
     p.lead{margin:0;color:var(--muted)}
     .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:18px}
-    .card{background:linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01));padding:14px;border-radius:12px;box-shadow:0 6px 18px rgba(2,6,23,0.6);border:1px solid rgba(255,255,255,0.03)}
+    .card{background:linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01));padding:14px;border-radius:12px;box-shadow:0 6bpx 18px rgba(2,6,23,0.6);border:1px solid rgba(255,255,255,0.03)}
     .big{grid-column:span 2}
     .stat{display:flex;align-items:baseline;justify-content:space-between}
     .stat .val{font-size:28px;font-weight:700}
@@ -96,7 +96,10 @@
   <script>
     function isoToLocal(iso) {
       const d = new Date(iso);
-      return d.toLocaleString();
+      if (isNaN(d.getTime())) {
+          return '--';
+      }
+      return d.toLocaleString('en-MY');
     }
 
     function computeStats(data) {
@@ -124,7 +127,7 @@
     }
 
     async function init() {
-      document.getElementById('renderTs').textContent = new Date().toLocaleString();
+      document.getElementById('renderTs').textContent = new Date().toLocaleString('en-MY');
 
       let rawData;
       try {
@@ -151,10 +154,34 @@
       document.getElementById('avgOutdoor').textContent = stats.outdoor.avg;
       document.getElementById('minIndoor').textContent = stats.indoor.min;
       document.getElementById('minOutdoor').textContent = stats.outdoor.min;
-      document.getElementById('maxIndoor').textContent = stats.outdoor.max;
+      document.getElementById('maxIndoor').textContent = stats.indoor.max;
+      document.getElementById('maxOutdoor').textContent = stats.outdoor.max;
 
       document.getElementById('rangeIndoor').textContent = stats.indoor.min + ' / ' + stats.indoor.max;
       document.getElementById('rangeOutdoor').textContent = stats.outdoor.min + ' / ' + stats.outdoor.max;
+
+      // New logic for lastTs and current temps using both APIs
+      try {
+        const latestResponse = await fetch('/api/t/latest');
+        const latestData = await latestResponse.json();
+        if (latestResponse.ok) {
+          document.getElementById('curIndoor').textContent = latestData.indoor_temp_C.toFixed(2) + '°C';
+          document.getElementById('curOutdoor').textContent = latestData.outdoor_temp_C.toFixed(2) + '°C';
+        } else {
+          throw new Error(`HTTP error! status: ${latestResponse.status}`);
+        }
+      } catch (e) {
+        console.error('Failed to fetch latest data:', e);
+        document.getElementById('curIndoor').textContent = '--°C';
+        document.getElementById('curOutdoor').textContent = '--°C';
+      }
+      
+      const latestFrom24 = rawData[rawData.length - 1];
+      if (latestFrom24) {
+          document.getElementById('lastTs').textContent = isoToLocal(latestFrom24.timestamp);
+      } else {
+          document.getElementById('lastTs').textContent = 'Error';
+      }
 
       const tbody = document.querySelector('#recentTable tbody');
       tbody.innerHTML = '';
@@ -165,7 +192,7 @@
         tbody.appendChild(tr);
       });
 
-      const labels = rawData.map(r => new Date(r.timestamp).toLocaleTimeString());
+      const labels = rawData.map(r => new Date(r.timestamp).toLocaleTimeString('en-MY'));
       const indoorSeries = rawData.map(r => r.indoor_temp_C);
       const outdoorSeries = rawData.map(r => r.outdoor_temp_C);
 
@@ -189,27 +216,9 @@
           scales: { x: { ticks: { color: '#9fb3c9' } }, y: { ticks: { color: '#9fb3c9' } } }
         }
       });
-
-      // Fetch latest data for current values and timestamp
-      try {
-        const latestResponse = await fetch('/api/t/latest');
-        const latestData = await latestResponse.json();
-        if (latestResponse.ok) {
-          document.getElementById('curIndoor').textContent = latestData.indoor_temp_C.toFixed(2) + '°C';
-          document.getElementById('curOutdoor').textContent = latestData.outdoor_temp_C.toFixed(2) + '°C';
-          document.getElementById('lastTs').textContent = isoToLocal(latestData.timestamp);
-        } else {
-          throw new Error(`HTTP error! status: ${latestResponse.status}`);
-        }
-      } catch (e) {
-        console.error('Failed to fetch latest data:', e);
-        document.getElementById('curIndoor').textContent = '--°C';
-        document.getElementById('curOutdoor').textContent = '--°C';
-        document.getElementById('lastTs').textContent = 'Error';
-      }
     }
 
-    init();
+    document.addEventListener('DOMContentLoaded', init);
   </script>
 </body>
 </html>
