@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Temp Summary Dashboard</title>
+  <title>Temperature Summary</title>
   <style>
     :root{--bg:#0f1724;--card:#0b1220;--accent:#06b6d4;--muted:#94a3b8;--glass:rgba(255,255,255,0.03)}
     html,body{height:100%;margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial}
@@ -49,8 +49,7 @@
   <div class="wrap">
     <header>
       <div>
-        <h1>Temperature Summary</h1>
-        <p class="lead">Compact summary of indoor & outdoor reading temperature</p>
+
       </div>
       <div class="controls">
         <button id="load24hBtn" class="active">24h</button>
@@ -58,7 +57,6 @@
         <div class="small" id="lastTs">Loading...</div>
       </div>
     </header>
-
     <div class="grid">
       <div class="card big">
         <div class="stat">
@@ -118,7 +116,13 @@
       if (isNaN(d.getTime())) {
           return '--';
       }
-      return d.toLocaleString('en-MY');
+      const datePart = d.toLocaleDateString('en-MY');
+      const timePart = d.toLocaleTimeString('en-MY', {
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: true
+      });
+      return `${datePart}, ${timePart}`;
     }
 
     function computeStats(data) {
@@ -195,7 +199,7 @@
         tbody.appendChild(tr);
       });
 
-      const labels = rawData.map(r => new Date(r.timestamp).toLocaleTimeString('en-MY'));
+      const labels = rawData.map(r => new Date(r.timestamp).toLocaleTimeString('en-MY', { hour: '2-digit', minute: '2-digit' }));
       const indoorSeries = rawData.map(r => r.indoor_temp_C);
       const outdoorSeries = rawData.map(r => r.outdoor_temp_C);
 
@@ -239,7 +243,13 @@
     }
 
     function init() {
-      document.getElementById('renderTs').textContent = new Date().toLocaleString('en-MY');
+      document.getElementById('renderTs').textContent = new Date().toLocaleString('en-MY', {
+          year: 'numeric',
+          month: 'numeric',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+      });
       document.getElementById('load24hBtn').addEventListener('click', () => loadData(24));
       document.getElementById('load48hBtn').addEventListener('click', () => loadData(48));
       loadData(24);
