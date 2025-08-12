@@ -19,7 +19,6 @@ serial_lock = threading.Lock()
 DB_FILE = 'sensor_data.db'
 
 def get_db_connection():
-    """Helper function to create a new database connection."""
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
     return conn
@@ -63,9 +62,12 @@ def fetch_from_serial(command):
     
     with serial_lock:
         try:
-            ser.write(command.encode('utf-8'))
-            ser.flush()
+            ser.flushInput()
             
+            ser.write(command.encode('utf-8'))
+            
+            time.sleep(0.1)
+
             start_time = time.time()
             while time.time() - start_time < DATA_TIMEOUT:
                 line = ser.readline().decode('utf-8').strip()
@@ -73,7 +75,11 @@ def fetch_from_serial(command):
                     if line.startswith('{') and line.endswith('}'):
                         try:
                             data = json.loads(line)
-                            return data
+                            
+                            if 'value' in data or 'voltage_V' in data:
+                                return data
+                            else:
+                                print(f"Ignoring JSON with unexpected keys: {line}")
                         except json.JSONDecodeError:
                             print(f"Could not parse line as JSON: {line}")
                     else:
