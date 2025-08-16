@@ -22,13 +22,9 @@ DallasTemperature sensors(&oneWireBus);
 DeviceAddress outdoorThermometer;
 DeviceAddress indoorThermometer;
 
-// INA219 Register Definitions for manual configuration
-#define INA219_REG_CONFIG (0x00)
-#define INA219_REG_CALIBRATION (0x05)
-
 // Global variables for automated relay control
 float voltage_on_threshold = 12.6;
-float voltage_off_threshold = 12.0;
+float voltage_off_threshold = 12.4;
 bool auto_relay_mode = true;
 
 // Functions for INA219 power control
@@ -37,7 +33,7 @@ void setINA219PowerDown() {
   uint16_t config_value = 0x399F;
   config_value &= ~0x0007; // Clear the mode bits
   Wire.beginTransmission(0x40);
-  Wire.write(INA219_REG_CONFIG);
+  Wire.write(0x00); // INA219_REG_CONFIG
   Wire.write((config_value >> 8) & 0xFF);
   Wire.write(config_value & 0xFF);
   Wire.endTransmission();
@@ -47,7 +43,7 @@ void setINA219Active() {
   // Bring the INA219 back to its active state
   uint16_t config_value = 0x399F;
   Wire.beginTransmission(0x40);
-  Wire.write(INA219_REG_CONFIG);
+  Wire.write(0x00); // INA219_REG_CONFIG
   Wire.write((config_value >> 8) & 0xFF);
   Wire.write(config_value & 0xFF);
   Wire.endTransmission();
@@ -78,9 +74,10 @@ void printIndoorTemp() {
   Serial.println(" }");
 }
 
+// This function now wakes up, reads, and then puts the sensor back to sleep.
 void printSolarData() {
   setINA219Active(); // Wake up sensor
-  delay(50); // Delay set to 50ms as requested
+  delay(50); // Give it a moment to take a reading
   Serial.print("{ \"sensor\": \"solar_pwr\", ");
   if (!ina219_found) {
     Serial.println("\"status\": \"error\" }");
@@ -127,14 +124,6 @@ void printRelayStatus() {
   } else {
     Serial.println("{\"sensor\": \"relay\", \"value\": \"OFF\"}");
   }
-}
-
-// Function to put the ESP32 into light sleep
-void light_sleep() {
-  Serial.println("Entering light sleep...");
-  esp_light_sleep_start();
-  // The program will resume here after the sleep period
-  Serial.println("Woke up from light sleep.");
 }
 
 // --- NEW FUNCTIONALITY FOR AUTO-RELAY CONTROL ---
@@ -187,21 +176,7 @@ void setup() {
   if (!ina219_found) {
     Serial.println("Error: INA219 not found!");
   } else {
-    float shunt_resistor = 0.1;
-    float max_current_amp = 3.2;
-    float current_lsb_amp = 0.0001; 
-    uint16_t cal_value = (uint16_t) (0.04096 / (current_lsb_amp * shunt_resistor));
-    Wire.beginTransmission(0x40);
-    Wire.write(INA219_REG_CALIBRATION);
-    Wire.write((cal_value >> 8) & 0xFF);
-    Wire.write(cal_value & 0xFF);
-    Wire.endTransmission();
-    uint16_t config_value = 0x399F;
-    Wire.beginTransmission(0x40);
-    Wire.write(INA219_REG_CONFIG);
-    Wire.write((config_value >> 8) & 0xFF);
-    Wire.write(config_value & 0xFF);
-    Wire.endTransmission();
+    // The INA219 will now use the default calibration from the library.
   }
 
   // Initialize DS18B20 sensors
@@ -210,7 +185,6 @@ void setup() {
     Serial.println("Error: Not enough DS18B20 sensors found!");
   } else {
     // Manually assign addresses to avoid swapping issues
-    const DeviceAddress outdoorAddress = { 0x28, 0x09, 0x8A, 0xC0, 0x00, 0x00, 0x00, 0xC7 };
     const DeviceAddress outdoorAddress = { 0x28, 0x09, 0x8A, 0xC0, 0x00, 0x00, 0x00, 0xC7 };
     const DeviceAddress indoorAddress = { 0x28, 0x07, 0xBB, 0x83, 0x00, 0x00, 0x00, 0xF5 };
     
@@ -224,6 +198,7 @@ void setup() {
   // Initialize Relay
   pinMode(RELAY_PIN, OUTPUT);
   digitalWrite(RELAY_PIN, LOW); // Start with the relay off
+  setINA219PowerDown(); // Put the INA219 into power down mode after initialization
 }
 
 void loop() {
@@ -254,8 +229,6 @@ void loop() {
       printRelayStatus();
     } else if (command == "t") {
       printBothTemps();
-    } else if (command == "p") {
-      light_sleep();
     } else if (command == "auto") {
       auto_relay_mode = true;
       Serial.println("{\"mode\": \"auto\", \"status\": \"enabled\"}");
@@ -284,7 +257,4 @@ void loop() {
       Serial.println("Invalid command.");
     }
   }
-
-  // Delay for 1 minute to save power
-  delay(60000);
 }
