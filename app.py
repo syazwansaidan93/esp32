@@ -363,25 +363,36 @@ def set_manual_mode():
     fetch_from_serial('manual')
     return jsonify({"status": "success", "message": "Manual mode enabled"}), 200
 
-@app.route('/settings/set_on_V', methods=['POST'])
-def set_on_threshold():
-    """Sets the 'turn on' voltage threshold for auto mode."""
+@app.route('/settings/set_power_on_mW', methods=['POST'])
+def set_power_on_threshold():
+    """Sets the 'turn on' power threshold for auto mode."""
     value = request.args.get('value')
     if value is None:
         return jsonify({"status": "error", "message": "Missing 'value' parameter"}), 400
-    data = fetch_from_serial(f'set_on_V {value}')
-    if data and data.get('command') == 'set_on_V':
+    data = fetch_from_serial(f'set_power_on_mW {value}')
+    if data and data.get('command') == 'set_power_on_mW':
         return jsonify({"status": "success", "new_value": data.get('value')})
     return jsonify({"status": "error", "message": "Failed to set threshold"}), 500
 
-@app.route('/settings/set_off_V', methods=['POST'])
-def set_off_threshold():
-    """Sets the 'turn off' voltage threshold for auto mode."""
+@app.route('/settings/set_power_off_mW', methods=['POST'])
+def set_power_off_threshold():
+    """Sets the 'turn off' power threshold for auto mode."""
     value = request.args.get('value')
     if value is None:
         return jsonify({"status": "error", "message": "Missing 'value' parameter"}), 400
-    data = fetch_from_serial(f'set_off_V {value}')
-    if data and data.get('command') == 'set_off_V':
+    data = fetch_from_serial(f'set_power_off_mW {value}')
+    if data and data.get('command') == 'set_power_off_mW':
+        return jsonify({"status": "success", "new_value": data.get('value')})
+    return jsonify({"status": "error", "message": "Failed to set threshold"}), 500
+
+@app.route('/settings/set_voltage_cutoff_V', methods=['POST'])
+def set_voltage_cutoff():
+    """Sets the low voltage cutoff for auto mode."""
+    value = request.args.get('value')
+    if value is None:
+        return jsonify({"status": "error", "message": "Missing 'value' parameter"}), 400
+    data = fetch_from_serial(f'set_voltage_cutoff_V {value}')
+    if data and data.get('command') == 'set_voltage_cutoff_V':
         return jsonify({"status": "success", "new_value": data.get('value')})
     return jsonify({"status": "error", "message": "Failed to set threshold"}), 500
 
