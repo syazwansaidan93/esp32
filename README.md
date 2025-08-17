@@ -48,8 +48,6 @@ This project is a Python Flask application designed to run on a host machine, su
 
    ```
    cd /home/wan/
-   
-   
    ```
 
 2. **Create and activate a Python virtual environment:**
@@ -57,16 +55,12 @@ This project is a Python Flask application designed to run on a host machine, su
    ```
    python3 -m venv venv
    source venv/bin/activate
-   
-   
    ```
 
 3. **Install the required Python packages:**
 
    ```
    pip install pyserial Flask APScheduler
-   
-   
    ```
 
 ### Configuration
@@ -86,8 +80,6 @@ To start the Flask application, navigate to your project directory and run:
 ```
 source venv/bin/activate
 python app.py
-
-
 ```
 
 You can then access the following API endpoints using `curl` or a web browser:
@@ -162,8 +154,6 @@ For reliable, hands-free operation, it is recommended to run the application as 
 
    ```
    sudo nano /etc/systemd/system/esp32-data-logger.service
-   
-   
    ```
 
 2. **Paste the following content into the file:**
@@ -182,8 +172,6 @@ For reliable, hands-free operation, it is recommended to run the application as 
    
    [Install]
    WantedBy=multi-user.target
-   
-   
    ```
 
 3. **Save the file and exit the editor.**
@@ -192,8 +180,6 @@ For reliable, hands-free operation, it is recommended to run the application as 
 
    ```
    sudo systemctl daemon-reload
-   
-   
    ```
 
 5. **Enable and start the service:**
@@ -201,8 +187,6 @@ For reliable, hands-free operation, it is recommended to run the application as 
    ```
    sudo systemctl enable esp32-data-logger
    sudo systemctl start esp32-data-logger
-   
-   
    ```
 
 ### Troubleshooting and Debugging
@@ -213,14 +197,10 @@ You can use the `journalctl` command to check the status and logs of your servic
 
   ```
   sudo systemctl status esp32-data-logger
-  
-  
   ```
 
 * **View the logs (including warnings and errors):**
 
   ```
   sudo journalctl -u esp32-data-logger -f
-  
-  
   
