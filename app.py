@@ -9,23 +9,32 @@ import sqlite3
 from datetime import datetime, timedelta
 import atexit
 import os
+import logging
 
+# Configure logging
+logging.basicConfig(level=logging.WARNING, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# --- Flask App Initialization ---
 app = Flask(__name__)
 
+# --- Configuration Constants ---
 BAUD_RATE = 115200
 DATA_TIMEOUT = 5
 DB_FILE = 'sensor_data.db'
 
+# --- Global Variables and Locks ---
 serial_lock = threading.Lock()
 ser = None
+
+# --- Serial Port Management ---
 
 def find_serial_port():
     ports = serial.tools.list_ports.comports()
     for port in ports:
         if "USB" in port.device or "ACM" in port.device:
-            print(f"Found potential serial port: {port.device}")
+            logging.info(f"Found potential serial port: {port.device}")
             return port.device
-    print("No suitable serial port found.")
+    logging.warning("No suitable serial port found.")
     return None
 
 def connect_to_serial():
@@ -41,27 +50,29 @@ def connect_to_serial():
         ser = serial.Serial(serial_port, BAUD_RATE, timeout=DATA_TIMEOUT)
         time.sleep(2)
         ser.flushInput()
-        print(f"Serial port {serial_port} opened successfully.")
+        logging.info(f"Serial port {serial_port} opened successfully.")
         return True
     except serial.SerialException as e:
-        print(f"Error opening serial port {serial_port}: {e}")
+        logging.error(f"Error opening serial port {serial_port}: {e}")
         ser = None
         return False
 
 def close_serial_port():
     global ser
     if ser and ser.is_open:
-        print("Closing serial port...")
+        logging.info("Closing serial port...")
         ser.close()
         ser = None
+
+# --- Data Fetching and Processing ---
 
 def fetch_from_serial(command):
     global ser
     with serial_lock:
         if not ser or not ser.is_open:
-            print("Serial port not connected. Attempting to reconnect...")
+            logging.warning("Serial port not connected. Attempting to reconnect...")
             if not connect_to_serial():
-                print("Failed to reconnect to serial port.")
+                logging.error("Failed to reconnect to serial port.")
                 return None
 
         try:
@@ -76,17 +87,21 @@ def fetch_from_serial(command):
                         data = json.loads(line)
                         return data
                     except json.JSONDecodeError:
-                        print(f"Could not parse line as JSON: {line}")
+                        logging.warning(f"Could not parse line as JSON: {line}")
+                elif line:
+                    logging.info(f"Ignoring non-JSON line: {line}")
             
-            print(f"Timed out waiting for a valid JSON response to command: {command}")
+            logging.warning(f"Timed out waiting for a valid JSON response to command: {command}")
             return None
         except serial.SerialException as e:
-            print(f"Serial communication error: {e}. Attempting to close and reconnect.")
+            logging.error(f"Serial communication error: {e}. Attempting to close and reconnect.")
             close_serial_port()
             return None
         except Exception as e:
-            print(f"An unexpected error occurred during serial communication: {e}")
+            logging.error(f"An unexpected error occurred during serial communication: {e}")
             return None
+
+# --- Database Management ---
 
 def get_db_connection():
     conn = sqlite3.connect(os.path.join(os.path.dirname(__file__), DB_FILE))
@@ -114,8 +129,10 @@ def setup_database():
     conn.commit()
     conn.close()
 
+# --- Scheduled Jobs (using APScheduler) ---
+
 def store_temperature_data_job():
-    print("Running scheduled job to store temperature data...")
+    logging.info("Running scheduled job to store temperature data...")
     data = fetch_from_serial('t')
     if data and 'i_temp' in data and 'o_temp' in data:
         record = {
@@ -132,14 +149,14 @@ def store_temperature_data_job():
             ''', (record['timestamp'], record['indoor_temp_C'], record['outdoor_temp_C']))
             conn.commit()
             conn.close()
-            print("Temperature data stored successfully.")
+            logging.info("Temperature data stored successfully.")
         except sqlite3.Error as e:
-            print(f"Error storing data to SQLite: {e}")
+            logging.error(f"Error storing data to SQLite: {e}")
     else:
-        print("Failed to fetch temperature data for storage.")
+        logging.warning("Failed to fetch temperature data for storage.")
 
 def store_solar_data_job():
-    print("Running scheduled job to store solar data...")
+    logging.info("Running scheduled job to store solar data...")
     s_data = fetch_from_serial('s')
     if s_data and 'voltage_V' in s_data and 'current_mA' in s_data and 'power_mW' in s_data:
         record = {
@@ -157,14 +174,14 @@ def store_solar_data_job():
             ''', (record['timestamp'], record['voltage_V'], record['current_mA'], record['power_mW']))
             conn.commit()
             conn.close()
-            print("Solar data stored successfully.")
+            logging.info("Solar data stored successfully.")
         except sqlite3.Error as e:
-            print(f"Error storing solar data to SQLite: {e}")
+            logging.error(f"Error storing solar data to SQLite: {e}")
     else:
-        print("Failed to fetch solar data for storage.")
+        logging.warning("Failed to fetch solar data for storage.")
 
 def prune_old_data_job():
-    print("Running scheduled job to prune old data...")
+    logging.info("Running scheduled job to prune old data...")
     cutoff_time = datetime.now() - timedelta(days=2)
     cutoff_iso = cutoff_time.isoformat()
     try:
@@ -176,10 +193,11 @@ def prune_old_data_job():
         deleted_solar_count = cursor.rowcount
         conn.commit()
         conn.close()
-        print(f"Successfully pruned {deleted_temp_count} old temperature records and {deleted_solar_count} old solar records.")
+        logging.info(f"Successfully pruned {deleted_temp_count} old temperature records and {deleted_solar_count} old solar records.")
     except sqlite3.Error as e:
-        print(f"Error pruning old data: {e}")
+        logging.error(f"Error pruning old data: {e}")
 
+# --- Flask API Endpoints ---
 @app.route('/r/on', methods=['POST'])
 def turn_relay_on():
     data = fetch_from_serial('r1')
