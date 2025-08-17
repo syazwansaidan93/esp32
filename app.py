@@ -10,25 +10,16 @@ from datetime import datetime, timedelta
 import atexit
 import os
 
-# --- Flask App Initialization ---
 app = Flask(__name__)
 
-# --- Configuration Constants ---
 BAUD_RATE = 115200
 DATA_TIMEOUT = 5
 DB_FILE = 'sensor_data.db'
 
-# --- Global Variables and Locks ---
 serial_lock = threading.Lock()
 ser = None
 
-# --- Serial Port Management ---
-
 def find_serial_port():
-    """
-    Scans for a serial port that is likely the ESP32-C3 and returns its path.
-    Looks for a port with 'USB' or 'ACM' in its name.
-    """
     ports = serial.tools.list_ports.comports()
     for port in ports:
         if "USB" in port.device or "ACM" in port.device:
@@ -38,78 +29,71 @@ def find_serial_port():
     return None
 
 def connect_to_serial():
-    """
-    Establishes a connection to the detected serial port.
-    Returns True on success, False on failure.
-    """
     global ser
+    if ser and ser.is_open:
+        return True
+    
     serial_port = find_serial_port()
-    if serial_port:
-        try:
-            ser = serial.Serial(serial_port, BAUD_RATE, timeout=DATA_TIMEOUT)
-            time.sleep(2)  # Wait for the ESP32 to reset and become ready
-            ser.flushInput()
-            print(f"Serial port {serial_port} opened successfully.")
-            return True
-        except serial.SerialException as e:
-            print(f"Error opening serial port {serial_port}: {e}")
-            ser = None
-            return False
-    return False
+    if not serial_port:
+        return False
+    
+    try:
+        ser = serial.Serial(serial_port, BAUD_RATE, timeout=DATA_TIMEOUT)
+        time.sleep(2)
+        ser.flushInput()
+        print(f"Serial port {serial_port} opened successfully.")
+        return True
+    except serial.SerialException as e:
+        print(f"Error opening serial port {serial_port}: {e}")
+        ser = None
+        return False
 
-# --- Data Fetching and Processing ---
+def close_serial_port():
+    global ser
+    if ser and ser.is_open:
+        print("Closing serial port...")
+        ser.close()
+        ser = None
 
 def fetch_from_serial(command):
-    """
-    Sends a command to the ESP32 and waits for a JSON response.
-    Uses a thread lock to prevent multiple threads from accessing the serial port simultaneously.
-    Returns the parsed JSON data or None if an error occurs or a timeout is reached.
-    """
     global ser
-    if not ser or not ser.is_open:
-        print("Serial port not connected. Attempting to reconnect...")
-        if not connect_to_serial():
-            return None
-
     with serial_lock:
-        try:
-            # Ensure the input buffer is clear before sending
-            ser.flushInput()
-            # Send the command with a newline character
-            ser.write(command.encode('utf-8') + b'\n')
-            time.sleep(0.1) # Wait briefly for the ESP32 to respond
+        if not ser or not ser.is_open:
+            print("Serial port not connected. Attempting to reconnect...")
+            if not connect_to_serial():
+                print("Failed to reconnect to serial port.")
+                return None
 
+        try:
+            ser.flushInput()
+            ser.write(command.encode('utf-8') + b'\n')
+            
             start_time = time.time()
             while time.time() - start_time < DATA_TIMEOUT:
                 line = ser.readline().decode('utf-8').strip()
-                if line:
-                    # Check if the line is a valid JSON object
-                    if line.startswith('{') and line.endswith('}'):
-                        try:
-                            data = json.loads(line)
-                            return data
-                        except json.JSONDecodeError:
-                            print(f"Could not parse line as JSON: {line}")
-                    else:
-                        print(f"Ignoring non-JSON line: {line}")
-
+                if line and line.startswith('{') and line.endswith('}'):
+                    try:
+                        data = json.loads(line)
+                        return data
+                    except json.JSONDecodeError:
+                        print(f"Could not parse line as JSON: {line}")
+            
             print(f"Timed out waiting for a valid JSON response to command: {command}")
             return None
         except serial.SerialException as e:
-            print(f"Serial communication error: {e}. Trying to reconnect on next attempt.")
-            ser = None
+            print(f"Serial communication error: {e}. Attempting to close and reconnect.")
+            close_serial_port()
+            return None
+        except Exception as e:
+            print(f"An unexpected error occurred during serial communication: {e}")
             return None
 
-# --- Database Management ---
-
 def get_db_connection():
-    """Returns a connection object to the SQLite database."""
     conn = sqlite3.connect(os.path.join(os.path.dirname(__file__), DB_FILE))
     conn.row_factory = sqlite3.Row
     return conn
 
 def setup_database():
-    """Creates the necessary tables if they don't exist."""
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute('''
@@ -130,13 +114,9 @@ def setup_database():
     conn.commit()
     conn.close()
 
-# --- Scheduled Jobs (using APScheduler) ---
-
 def store_temperature_data_job():
-    """Fetches temperature data from ESP32 and stores it in the database."""
     print("Running scheduled job to store temperature data...")
     data = fetch_from_serial('t')
-
     if data and 'i_temp' in data and 'o_temp' in data:
         record = {
             'timestamp': datetime.now().isoformat(),
@@ -159,10 +139,8 @@ def store_temperature_data_job():
         print("Failed to fetch temperature data for storage.")
 
 def store_solar_data_job():
-    """Fetches solar data from ESP32 and stores it in the database."""
     print("Running scheduled job to store solar data...")
     s_data = fetch_from_serial('s')
-
     if s_data and 'voltage_V' in s_data and 'current_mA' in s_data and 'power_mW' in s_data:
         record = {
             'timestamp': datetime.now().isoformat(),
@@ -186,11 +164,9 @@ def store_solar_data_job():
         print("Failed to fetch solar data for storage.")
 
 def prune_old_data_job():
-    """Deletes data older than 2 days to keep the database from growing too large."""
     print("Running scheduled job to prune old data...")
     cutoff_time = datetime.now() - timedelta(days=2)
     cutoff_iso = cutoff_time.isoformat()
-
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -203,8 +179,6 @@ def prune_old_data_job():
         print(f"Successfully pruned {deleted_temp_count} old temperature records and {deleted_solar_count} old solar records.")
     except sqlite3.Error as e:
         print(f"Error pruning old data: {e}")
-
-# --- Flask API Endpoints ---
 
 @app.route('/r/on', methods=['POST'])
 def turn_relay_on():
@@ -345,7 +319,6 @@ def get_s_48h():
 
 @app.route('/settings')
 def get_settings():
-    """Fetches and returns the current relay control settings."""
     data = fetch_from_serial('get_settings')
     if data and 'relay_settings' in data:
         return jsonify(data['relay_settings'])
@@ -353,19 +326,16 @@ def get_settings():
 
 @app.route('/settings/auto', methods=['POST'])
 def set_auto_mode():
-    """Sets the relay control mode to automatic."""
     fetch_from_serial('auto')
     return jsonify({"status": "success", "message": "Automatic mode enabled"}), 200
 
 @app.route('/settings/manual', methods=['POST'])
 def set_manual_mode():
-    """Sets the relay control mode to manual."""
     fetch_from_serial('manual')
     return jsonify({"status": "success", "message": "Manual mode enabled"}), 200
 
 @app.route('/settings/set_power_on_mW', methods=['POST'])
 def set_power_on_threshold():
-    """Sets the 'turn on' power threshold for auto mode."""
     value = request.args.get('value')
     if value is None:
         return jsonify({"status": "error", "message": "Missing 'value' parameter"}), 400
@@ -376,7 +346,6 @@ def set_power_on_threshold():
 
 @app.route('/settings/set_power_off_mW', methods=['POST'])
 def set_power_off_threshold():
-    """Sets the 'turn off' power threshold for auto mode."""
     value = request.args.get('value')
     if value is None:
         return jsonify({"status": "error", "message": "Missing 'value' parameter"}), 400
@@ -387,7 +356,6 @@ def set_power_off_threshold():
 
 @app.route('/settings/set_voltage_cutoff_V', methods=['POST'])
 def set_voltage_cutoff():
-    """Sets the low voltage cutoff for auto mode."""
     value = request.args.get('value')
     if value is None:
         return jsonify({"status": "error", "message": "Missing 'value' parameter"}), 400
@@ -399,16 +367,10 @@ def set_voltage_cutoff():
 if __name__ == '__main__':
     setup_database()
     connect_to_serial()
+    atexit.register(close_serial_port)
     scheduler = BackgroundScheduler()
-    # Log temperature data every 15 minutes
     scheduler.add_job(store_temperature_data_job, 'interval', minutes=15)
-    # Log solar data every 15 minutes, but only during daylight hours (7 AM to 8 PM)
-    scheduler.add_job(store_solar_data_job, 'cron', hour='7-20', minute='*/15')
-    # Prune old data every 24 hours
+    scheduler.add_job(store_solar_data_job, 'cron', hour='7-19', minute='*/10')
     scheduler.add_job(prune_old_data_job, 'interval', hours=24)
     scheduler.start()
-
-    # Ensure the scheduler shuts down cleanly when the app exits
-    atexit.register(lambda: scheduler.shutdown(wait=False))
-
     app.run(host='0.0.0.0', port=5000)
