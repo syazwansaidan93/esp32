@@ -18,10 +18,11 @@ DallasTemperature sensors(&oneWireBus);
 DeviceAddress outdoorThermometer;
 DeviceAddress indoorThermometer;
 
+float voltage_low_cutoff_V = 12.1;
+float voltage_high_on_threshold_V = 13.4;
 float power_on_threshold_mW = 2000.0;
 float power_off_threshold_mW = 500.0;
-float voltage_low_cutoff_V = 12.1;
-unsigned long debounce_delay_ms = 300000;
+unsigned long debounce_delay_ms = 60000;
 bool auto_relay_mode = true;
 unsigned long debounce_timer_start = 0;
 int last_stable_state = LOW;
@@ -130,7 +131,8 @@ void checkAndControlRelay() {
   setINA219PowerDown();
 
   int desired_state = last_stable_state;
-  if ((current_power_mW >= power_on_threshold_mW) && (current_voltage_V > voltage_low_cutoff_V)) {
+
+  if ((current_voltage_V >= voltage_high_on_threshold_V) || ((current_power_mW >= power_on_threshold_mW) && (current_voltage_V > voltage_low_cutoff_V))) {
     desired_state = HIGH;
   } else if ((current_power_mW <= power_off_threshold_mW) || (current_voltage_V <= voltage_low_cutoff_V)) {
     desired_state = LOW;
@@ -170,6 +172,8 @@ void printRelaySettings() {
   Serial.print(power_off_threshold_mW);
   Serial.print(", \"voltage_low_cutoff_V\": ");
   Serial.print(voltage_low_cutoff_V);
+  Serial.print(", \"voltage_high_on_threshold_V\": ");
+  Serial.print(voltage_high_on_threshold_V);
   Serial.print(", \"debounce_delay_ms\": ");
   Serial.print(debounce_delay_ms);
   Serial.println(" } }");
@@ -254,6 +258,22 @@ void loop() {
         Serial.println("{\"command\": \"set_voltage_cutoff_V\", \"value\": " + String(voltage_low_cutoff_V) + "}");
       } else {
         Serial.println("{\"command\": \"set_voltage_cutoff_V\", \"status\": \"error\", \"message\": \"invalid value\"}");
+      }
+    } else if (command.startsWith("set_voltage_high_on_V")) {
+      float new_threshold = command.substring(command.indexOf(' ') + 1).toFloat();
+      if (new_threshold > 0) {
+        voltage_high_on_threshold_V = new_threshold;
+        Serial.println("{\"command\": \"set_voltage_high_on_V\", \"value\": " + String(voltage_high_on_threshold_V) + "}");
+      } else {
+        Serial.println("{\"command\": \"set_voltage_high_on_V\", \"status\": \"error\", \"message\": \"invalid value\"}");
+      }
+    } else if (command.startsWith("set_debounce_ms")) {
+      unsigned long new_delay = command.substring(command.indexOf(' ') + 1).toFloat();
+      if (new_delay > 0) {
+        debounce_delay_ms = new_delay;
+        Serial.println("{\"command\": \"set_debounce_ms\", \"value\": " + String(debounce_delay_ms) + "}");
+      } else {
+        Serial.println("{\"command\": \"set_debounce_ms\", \"status\": \"error\", \"message\": \"invalid value\"}");
       }
     } else if (command == "get_settings") {
       printRelaySettings();
